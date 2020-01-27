@@ -92,7 +92,3 @@ Once the Availability Alert has been triggered, it is possible to see the Logic 
 Which, results in SMS texts being received by the wives.
 
 ![sms texts](images/sms.jpg)
-
-## Quick Deploy to Azure
-
-[![Deploy to Azure](http://azuredeploy.net/deploybutton.svg)](https://azuredeploy.net/)
