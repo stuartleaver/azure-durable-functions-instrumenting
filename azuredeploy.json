@@ -1,0 +1,420 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "twilioSid": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Your Twilio SID. This can be found on your Twilio's project dashboard."
+      }
+    },
+    "twilioToken": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Your Twilio Auth Token. This can be found on your Twilio's project dashboard."
+      }
+    },
+    "twilioAccountNumber": {
+      "type": "string",
+      "metadata": {
+        "description": "The Twilio number the message will send from. This can be found on your Twilio's project dashboard."
+      }
+    },
+    "toPhoneNumber": {
+      "type": "string",
+      "metadata": {
+        "description": "The phone number the message will send to. This can be found on your Twilio's project dashboard."
+      }
+    }
+  },
+  "variables": {
+    "location": "[resourceGroup().location]",
+    "appName": "[concat('chasse-galerie-canoe-health', uniquestring(resourceGroup().id))]",
+    "functionAppName": "[variables('appName')]",
+    "hostingPlanName": "[concat(variables('appName'), '-plan')]",
+    "storageAccountName": "[concat('storage', uniquestring(resourceGroup().id))]",
+    "applicationInsightsName": "ChasseGalerieCanoeHealthAppInsights",
+    "webtest": "Canoe Health Check - 400",
+    "metricAlert": "Canoe Health Check Availibility Test - 400",
+    "sendSmsNotificationActionGroupName": "SendSmsNotification",
+    "logicAppName": "ChasseGalerieCanoeHealthAlert",
+    "twilioConnectionName": "twilio"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2018-11-01",
+      "name": "[variables('functionAppName')]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('microsoft.insights/components', variables('applicationInsightsName'))]"
+      ],
+      "kind": "functionapp",
+      "properties": {
+        "name": "[variables('functionAppName')]",
+        "siteConfig": {
+          "appSettings": [
+            {
+              "name": "FUNCTIONS_EXTENSION_VERSION",
+              "value": "~2"
+            },
+            {
+              "name": "FUNCTIONS_WORKER_RUNTIME",
+              "value": "dotnet"
+            },
+            {
+              "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+              "value": "[reference(resourceId('microsoft.insights/components/', variables('applicationInsightsName')), '2015-05-01').InstrumentationKey]"
+            },
+            {
+              "name": "AzureWebJobsStorage",
+              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')),'2015-05-01-preview').key1)]"
+            },
+            {
+              "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')),'2015-05-01-preview').key1)]"
+            },
+            {
+              "name": "WEBSITE_CONTENTSHARE",
+              "value": "[toLower(variables('functionAppName'))]"
+            }
+          ]
+        },
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+        "hostingEnvironment": "",
+        "clientAffinityEnabled": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2018-02-01",
+      "name": "[variables('hostingPlanName')]",
+      "location": "[variables('location')]",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      },
+      "kind": "",
+      "properties": {
+        "name": "[variables('hostingPlanName')]",
+        "workerSize": 0,
+        "workerSizeId": 0,
+        "numberOfWorkers": 1,
+        "hostingEnvironment": ""
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2019-04-01",
+      "name": "[variables('storageAccountName')]",
+      "location": "[variables('location')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "supportsHttpsTrafficOnly": true
+      }
+    },
+    {
+      "type": "microsoft.insights/components",
+      "apiVersion": "2015-05-01",
+      "name": "[variables('applicationInsightsName')]",
+      "location": "[variables('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "Request_Source": "IbizaWebAppExtensionCreate"
+      }
+    },
+    {
+      "type": "microsoft.insights/webtests",
+      "apiVersion": "2015-05-01",
+      "name": "[variables('webtest')]",
+      "location": "[variables('location')]",
+      "tags": {
+        "[concat('hidden-link:', resourceGroup().id, '/providers/microsoft.insights/components/', variables('applicationInsightsName'))]": "Resource"
+      },
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', variables('applicationInsightsName'))]"
+      ],
+      "properties": {
+        "Name": "[variables('webtest')]",
+        "Enabled": true,
+        "Frequency": 300,
+        "Timeout": 120,
+        "Kind": "ping",
+        "RetryEnabled": true,
+        "Locations": [
+          {
+            "Id": "emea-ru-msa-edge"
+          }
+        ],
+        "Configuration": {
+          "WebTest": "[concat('<WebTest Name=\"', variables('webtest'), '\" Id=\"1280202a-e501-4993-9de4-a854e5bfe5ae\" Enabled=\"True\" CssProjectStructure=\"\" CssIteration=\"\" Timeout=\"120\" WorkItemIds=\"\" xmlns=\"http://microsoft.com/schemas/VisualStudio/TeamTest/2010\" Description=\"\" CredentialUserName=\"\" CredentialPassword=\"\" PreAuthenticate=\"True\" Proxy=\"default\" StopOnError=\"False\" RecordedResultFile=\"\" ResultsLocale=\"\">        <Items>        <Request       Method=\"GET\" Guid=\"a3a99532-fb5d-4b88-f787-660a9970aa46\" Version=\"1.1\" Url=\"https://', variables('functionAppName'), '.azurewebsites.net/api/canoehealthcheck\" ThinkTime=\"0\" Timeout=\"120\" ParseDependentRequests=\"False\" FollowRedirects=\"True\" RecordResult=\"True\" Cache=\"False\" ResponseTimeGoal=\"0\" Encoding=\"utf-8\" ExpectedHttpStatusCode=\"400\" ExpectedResponseUrl=\"\" ReportingName=\"\" IgnoreHttpStatusCode=\"False\" /></Items></WebTest>')]"
+        },
+        "SyntheticMonitorId": "[variables('webtest')]"
+      }
+    },
+    {
+      "type": "microsoft.insights/metricalerts",
+      "apiVersion": "2018-03-01",
+      "name": "[variables('metricAlert')]",
+      "location": "global",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/webtests', variables('webtest'))]",
+        "[resourceId('microsoft.insights/components', variables('applicationInsightsName'))]",
+        "[resourceId('microsoft.insights/actionGroups', variables('sendSmsNotificationActionGroupName'))]"
+      ],
+      "tags": {
+        "[concat('hidden-link:', resourceGroup().id, '/providers/microsoft.insights/components/', variables('applicationInsightsName'))]": "Resource",
+        "[concat('hidden-link:', resourceGroup().id, '/providers/microsoft.insights/webtests/', variables('webtest'))]": "Resource"
+      },
+      "properties": {
+        "description": "[concat('Alert rule for availability test \"', variables('metricAlert'), '\"')]",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [
+          "[resourceId('microsoft.insights/webtests', variables('webtest'))]",
+          "[resourceId('microsoft.insights/components', variables('applicationInsightsName'))]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.WebtestLocationAvailabilityCriteria",
+          "webTestId": "[resourceId('Microsoft.Insights/webtests', variables('webtest'))]",
+          "componentId": "[resourceId('Microsoft.Insights/components', variables('applicationInsightsName'))]",
+          "failedLocationCount": 1
+        },
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('microsoft.insights/actionGroups', variables('sendSmsNotificationActionGroupName'))]",
+            "webHookProperties": {}
+          }
+        ]
+      }
+    },
+    {
+      "type": "microsoft.insights/actionGroups",
+      "apiVersion": "2019-03-01",
+      "name": "[variables('sendSmsNotificationActionGroupName')]",
+      "location": "Global",
+      "dependsOn": [
+        "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]"
+      ],
+      "properties": {
+        "groupShortName": "Send SMS",
+        "enabled": true,
+        "emailReceivers": [],
+        "smsReceivers": [],
+        "webhookReceivers": [],
+        "itsmReceivers": [],
+        "azureAppPushReceivers": [],
+        "automationRunbookReceivers": [],
+        "voiceReceivers": [],
+        "logicAppReceivers": [
+          {
+            "name": "[concat(variables('sendSmsNotificationActionGroupName'), 'LogicApp')]",
+            "resourceId": "[resourceId('Microsoft.Logic/workflows', variables('logicAppName'))]",
+            "callbackUrl": "[listCallbackURL(concat(resourceId('Microsoft.Logic/workflows', variables('logicAppName')), '/triggers/manual'), '2016-06-01').value]",
+            "useCommonAlertSchema": false
+          }
+        ],
+        "azureFunctionReceivers": []
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2017-07-01",
+      "name": "[variables('logicAppName')]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', variables('twilioConnectionName'))]"
+      ],
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+          "triggers": {
+            "manual": {
+              "type": "Request",
+              "kind": "Http",
+              "inputs": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "context": {
+                          "properties": {
+                            "activityLog": {
+                              "properties": {
+                                "authorization": {
+                                  "properties": {
+                                    "action": {
+                                      "type": "string"
+                                    },
+                                    "scope": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                },
+                                "caller": {
+                                  "type": "string"
+                                },
+                                "channels": {
+                                  "type": "string"
+                                },
+                                "claims": {
+                                  "type": "string"
+                                },
+                                "correlationId": {
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "eventDataId": {
+                                  "type": "string"
+                                },
+                                "eventSource": {
+                                  "type": "string"
+                                },
+                                "eventTimestamp": {
+                                  "type": "string"
+                                },
+                                "level": {
+                                  "type": "string"
+                                },
+                                "operationId": {
+                                  "type": "string"
+                                },
+                                "operationName": {
+                                  "type": "string"
+                                },
+                                "resourceGroupName": {
+                                  "type": "string"
+                                },
+                                "resourceId": {
+                                  "type": "string"
+                                },
+                                "resourceProviderName": {
+                                  "type": "string"
+                                },
+                                "resourceType": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "subStatus": {
+                                  "type": "string"
+                                },
+                                "submissionTimestamp": {
+                                  "type": "string"
+                                },
+                                "subscriptionId": {
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "properties": {
+                          "properties": {},
+                          "type": "object"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "schemaId": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "actions": {
+            "Check_if_status_is_activated": {
+              "actions": {
+                "Send_Text_Message_(SMS)": {
+                  "runAfter": {},
+                  "type": "ApiConnection",
+                  "inputs": {
+                    "body": {
+                      "body": "One of the flying lumberjacks' has said a curse word!",
+                      "from": "[parameters('twilioAccountNumber')]",
+                      "to": "[parameters('toPhoneNumber')]"
+                    },
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['twilio']['connectionId']"
+                      }
+                    },
+                    "method": "post",
+                    "path": "/Messages.json"
+                  }
+                }
+              },
+              "runAfter": {},
+              "expression": {
+                "and": [
+                  {
+                    "equals": [
+                      "@triggerBody()?['data']?['status']",
+                      "Activated"
+                    ]
+                  }
+                ]
+              },
+              "type": "If"
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "twilio": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', variables('twilioConnectionName'))]",
+                "connectionName": "twilio",
+                "id": "[concat(subscription().id,'/providers/Microsoft.Web/locations/', variables('location'), '/managedApis/twilio')]"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[variables('twilioConnectionName')]",
+      "location": "[variables('location')]",
+      "properties": {
+        "displayName": "TwilioConnection",
+        "parameterValues": {
+          "sid": "[parameters('twilioSid')]",
+          "token": "[parameters('twilioToken')]"
+        },
+        "api": {
+          "id": "[concat(subscription().id,'/providers/Microsoft.Web/locations/', variables('location'), '/managedApis/', variables('twilioConnectionName'))]"
+        }
+      }
+    }
+  ]
+}
