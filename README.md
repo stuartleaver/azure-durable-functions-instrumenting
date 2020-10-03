@@ -92,3 +92,7 @@ Once the Availability Alert has been triggered, it is possible to see the Logic 
 Which, results in SMS texts being received by the wives.
 
 ![sms texts](images/sms.jpg)
+
+## Featured In
+Links to other site where the code can be seen:
+[Azure serverless community library](https://serverlesslibrary.net/sample/26bc95cf-cea9-43aa-bbd6-aa764eb39313)
